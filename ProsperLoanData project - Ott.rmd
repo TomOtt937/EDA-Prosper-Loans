@@ -1,0 +1,1334 @@
+Exploration of Loan Data from Prosper by Thomas Ott
+===================================================
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# https://yihui.name/knitr/options -chunk options
+
+library(ggplot2)
+library(xlsx)
+#library(plyr) # must be loaded before dplyr
+library(dplyr)
+library(GGally)
+library(RColorBrewer)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_the_Data}
+# Load the Data
+setwd('C:/Users/Home/Documents/TOM/Udacity/Data Analyst Nanodegree/5 - EDA Exploratory Data Analysis/Project')
+ld <- read.csv('prosperLoanData.csv')
+```
+
+This report explores Loan Data from Prosper. The dataset was last updated 
+on March 11, 2014.
+
+According to the Prosper prospectus, "Prosper is a pioneer of online marketplace 
+lending that connects borrowers and investors. Our goal is to enable borrowers 
+to access credit at affordable rates and provide investors with attractive 
+risk-adjusted rates of return."
+
+I will look at this dataset from the perspective of a potential investor.
+
+# Univariate Plots Section
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Univariate_Plots}
+dim(ld)
+```
+
+The dataset contains 81 variables and 113,937 observations.  Each observation 
+is a loan.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+str(ld)
+```
+
+Looking through the data types of each variable, the date fields were imported 
+as type Factor.  These fields need to be convert to the Date format for the 
+analysis.
+
+Though Prosper started offering loans in 2006, several of the fields that will 
+be used in this analysis weren't introduced until July of 2009. For this 
+analysis, loans originated prior to that timeframe will be removed from the 
+dataset. The fields are CreditGrade, EstimatedEffectiveYield, EstimatedLoss, 
+EstimatedReturn, ProsperRating..numeric, ProsperRating..Alpha, and ProsperScore. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Convert_Dates}
+# The date fields were imported as type Factor and need to be convert to Date.
+#class(ld$ListingCreationDate)
+#summary(ld$ListingCreationDate)
+ld$ListingCreationDate <- as.Date(ld$ListingCreationDate)
+ld$ClosedDate <- as.Date(ld$ClosedDate)
+ld$DateCreditPulled <- as.Date(ld$DateCreditPulled)
+ld$FirstRecordedCreditLine <- as.Date(ld$FirstRecordedCreditLine)
+ld$LoanOriginationDate <- as.Date(ld$LoanOriginationDate)
+
+ld_sub <- subset(ld, LoanOriginationDate >= '2009-08-01')
+
+# After removing records with LoanOriginationDate before 8-1-2009,
+# there are 115 additional records with NA values in the listed fields.  
+# The ListingCreationDate on these records is before 8-1-2009, 
+# so they will also be removed from the analysis.
+#subset(ld_sub, is.na(EstimatedEffectiveYield))
+#summary(subset(ld_sub, is.na(EstimatedEffectiveYield)))
+ld_sub <- subset(ld_sub, !is.na(EstimatedEffectiveYield))
+
+dim(ld_sub)
+#str(ld_sub)
+```
+
+With the date variables converted and the loans that originated before July 
+2009 removed, the new dataset contains 84,837 loans instead of 113,937.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(ld_sub)
+```
+
+The Summary of all the variables gives an initial idea of each variable's range
+and central tendency.
+
+```{r ignore = TRUE, include = FALSE, ExportRecordsToExcel}
+# This section used to send example loans to excel so I could model some 
+# examples and get a better understanding of the fields.
+# I tried ignoring the chunk but knit still tries to evaluate it.
+
+## Established after July 2009 and Completed
+x <- subset(ld_sub, LoanStatus == "Completed")
+#x <- subset(ld_sub, LoanStatus == "Completed" & ActualReturn > .5)
+write.xlsx(x[1:10,], file = "ld_ExampleLoanRecords_EstAfterJul09.xlsx", 
+  sheetName = "Completed", col.names = TRUE, row.names = TRUE, append = FALSE)
+
+## Established after July 2009 and Defaulted
+x <- subset(ld_sub, LoanStatus == "Defaulted")
+write.xlsx(x[1:10,], file = "ld_ExampleLoanRecords_EstAfterJul09.xlsx", 
+  sheetName = "Defaulted", col.names = TRUE, row.names = TRUE, append = TRUE)
+
+## Established after July 2009 and Chargedoff
+x <- subset(ld_sub, LoanStatus == "Chargedoff")
+write.xlsx(x[1:10,], file = "ld_ExampleLoanRecords_EstAfterJul09.xlsx", 
+  sheetName = "Chargedoff", col.names = TRUE, row.names = TRUE, append = TRUE)
+
+#summary(x)
+#dim(x)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanOriginationDate}
+# Histogram of dates by year
+ggplot(aes(x = LoanOriginationDate), data = ld_sub) + 
+         geom_histogram(binwidth = 30)
+summary(ld_sub$LoanOriginationDate)
+```
+
+The LoanOriginationDate variable shows the date a loan was approved and 
+disbursed to the borrower. The dates range from August 3, 2009 through 
+March 12, 2014.  You can see how the number of loans has steadily increased as 
+the Prosper service has grown. There is a decrease in loans at the end of 2012 
+followed by a significant increase in 2013.  Scanning through press releases on 
+Prosper's web site, a new management team backed by Sequoia Capital was put in 
+place in January of 2013. The change in leadership was followed by the 
+significant growth.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Term}
+ggplot(aes(x = factor(Term)), data = ld_sub) +
+  geom_histogram(stat = 'count') 
+table(factor(ld_sub$Term))
+```
+
+Looking at the Term variable, all of the loans are either 12 months, 36 months, 
+or 60 months.  The most popular loan is 36 months, and the least popular is
+12 months.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanStatus}
+counts=table(ld_sub$LoanStatus)
+#counts[order(-counts)]
+par(las=2) 
+par(mar=c(4.5,9,4,2)) #c(bottom, left, top, right)  
+barplot(counts[order(-counts)], main="Loan Status", horiz=TRUE, 
+        cex.names=0.8, xlab="Number of Loans")
+
+# Pie chart with counts
+#ggplot(ld_sub, aes(x=factor(1), fill=LoanStatus)) +
+#  geom_bar(width=1) +
+#  coord_polar("y")  +
+#  ggtitle("Proportions of Loan Status Counts") +
+#  labs(x="",y="") 
+
+ls <- ld_sub %>%  #using dplyr
+  group_by(LoanStatus) %>%
+  summarise(proportion = n() / nrow(.))
+ls
+
+# Bar chart with proportions
+#ggplot(ls, aes(x="", y=count, fill=LoanStatus))+
+#  geom_bar(width=1, stat="identity") +
+#  ggtitle("Proportions of Loan Status Counts") +
+#  labs(x="",y="") 
+
+# Pie chart with proportions
+#ggplot(ls, aes(x="", y=count, fill=LoanStatus))+
+#  geom_bar(width=1, stat="identity") +
+#  coord_polar("y") +
+#  ggtitle("Proportions of Loan Status Counts") +
+#  labs(x="",y="") 
+```
+
+The table after the chart shows the proportion of each loan status.  The 
+majority of loans are current, which at first seemed surprising to 
+me.  Looking back at the histogram of loan creation dates, we see that a lot 
+of the loans have been created in the past couple of years, and from the term 
+bar chart that most loans are 3 or 5 years long.  With that in mind, it makes 
+sense that a large portion of loans would still be active.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ProsperRating}
+# set the correct order of ProsperRating values
+ld_sub$ProsperRating..Alpha. <- factor(ld_sub$ProsperRating..Alpha., 
+      levels = c('AA', 'A', 'B', 'C', 'D', 'E', 'HR'), ordered=T)
+#table(ld_sub$ProsperRating..Alpha.)
+
+#ld_sub %>%
+#  group_by(ProsperRating..Alpha.) %>%
+#  summarise(proportion = n() / nrow(.))
+
+
+qplot(ProsperRating..Alpha., data=ld_sub)
+```
+
+Prosper assigns a proprietary loss rating to each loan when the listing is 
+created. The ratings are from AA (best) to HR (high risk) and indicate the level 
+of risk associated with a listing. The ratings are based on a credit report 
+pulled from a credit agency along with previous loans the borrower has with 
+prosper (which is reflected in the variable ProsperScore).
+ 
+Looking at a histogram of the ratings, the distribution is somewhat normal, 
+favoring better ratings.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ListingCategory}
+ld_sub$ListingCategory..alpha. <- as.factor(ld_sub$ListingCategory..numeric.)
+levels(ld_sub$ListingCategory..alpha.) <- c("0"="Not Available", 
+       "1"="Debt Consolidation", "2"="Home Improvement", "3"="Business", 
+       "4"="Personal Loan", "5"="Student Use", "6"="Auto", "7"="Other", 
+       "8"="Baby&Adoption", "9"="Boat", "10"="Cosmetic Procedure", 
+       "11"="Engagement Ring", "12"="Green Loans", "13"="Household Expenses", 
+       "14"="Large Purchases", "15"="Medical/Dental", "16"="Motorcycle", 
+       "17"="RV", "18"="Taxes", "19"="Vacation", "20"="Wedding Loans")
+counts <- table(ld_sub$ListingCategory..alpha.)
+#counts
+
+# http://www.statmethods.net/advgraphs/parameters.html
+par(las=2) # make label text perpendicular to axis
+par(mar=c(4.5,8,4,2)) #c(bottom, left, top, right)  
+barplot(counts[order(-counts)], main="Borrower's Reason for Loan", 
+        horiz=TRUE, cex.names=0.8, xlab="Number of Loans")
+```
+
+The ListingCategory variable shows the borrowers plans for the loan money.
+There are 21 categories.  By far, the largest reason for a loan is debt 
+consolidation.
+
+```{r fig.height=7.5, echo=FALSE, message=FALSE, warning=FALSE, BorrowerState}
+#attributes(ld_sub$BorrowerState)
+#typeof(ld_sub$BorrowerState)
+#table(ld_sub$BorrowerState)
+
+counts <- table(ld_sub$BorrowerState)
+
+par(las=2)
+par(mar=c(4.5,4,4,2)) #c(bottom, left, top, right)  
+barplot(counts[order(-counts)], main="State Where Loan Originated", 
+        horiz=TRUE, cex.names=0.6, xlab="Number of Loans")
+dim(counts)
+#counts[order(-counts)]
+```
+
+The largest number of loans were initiated in the state of California followed 
+by New York, Texas and Florida.  None were initiated in Iowa, Maine or North
+Dakota.  Note that the District of Columbia was also included, which technically 
+isn't a state, plus a blank option that had zero selections, resulting in 52 
+possible values.
+
+```{r fig.height=8, echo=FALSE, message=FALSE, warning=FALSE, Occupation}
+#attributes(ld_sub$Occupation )
+#typeof(ld_sub$Occupation )
+#table(ld_sub$Occupation )
+#factor(ld_sub$Occupation )
+
+counts <- table(ld_sub$Occupation )
+
+par(las=2)
+par(mar=c(4.5,13,4,2)) #c(bottom, left, top, right)  
+barplot(counts[order(-counts)], main="Occupation Selected by Borrower", 
+        horiz=TRUE, cex.names=0.6, xlab="Number of Loans")
+#counts[order(-counts)]
+dim(counts)
+```
+
+There are 68 possible values that can be selected for the borrower's occupation.
+The occupation of Other was most often selected followed by Professional, 
+Executive, and Computer Programmer.  One of the possible values is a blank, 
+which probably means nothing was selected.  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, EmploymentStatus}
+#attributes(ld_sub$EmploymentStatus)
+#typeof(ld_sub$EmploymentStatus)
+#table(ld_sub$EmploymentStatus)
+
+counts <- table(ld_sub$EmploymentStatus)
+
+par(las=2)
+par(mar=c(4.5,5,4,2)) #c(bottom, left, top, right)  
+barplot(counts[order(-counts)], main="Employment Status of Borrower", 
+        horiz=TRUE, cex.names=0.7, xlab="Number of Loans")
+#counts[order(-counts)]
+dim(counts)
+```
+
+Employment status of the borrower has nine possible values, seven of which were
+selected by borrowers.  By far, Employed was most often selected.  To me, 
+Full-time, Part-time and Self-employed are just subsets of Employed.  I'm not 
+sure what the Other option could be outside of the available options, and it's 
+too generic to be meaningful.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, EmploymentStatusDuration}
+qplot(EmploymentStatusDuration, data=ld_sub, binwidth = 1) 
+#  scale_x_continuous(limits = c(0, 200))
+summary(ld_sub$EmploymentStatusDuration)
+
+# Transform
+qplot(sqrt(EmploymentStatusDuration), 
+      data=subset(ld_sub, !is.na(EmploymentStatusDuration)), binwidth = .5) 
+```
+
+The EmploymentStatusDuration variable shows the length in months of the 
+employment status.  The max value is 755, which is 62.9 years!  Though highly
+unusual, I suppose it could happen.  The histogram starts high and drops as the 
+amount of time employed increases.  This shows that most applicants are 
+relatively new to their current employer and are either new to the work force or 
+recently changed jobs.  The trend flattens out at around 20 through 25 years, 
+possibly due to folks holding out for retirement. Transforming the graph using 
+sqrt shows a pattern of some longevity before moving on to another job.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Income}
+#levels(ld_sub$IncomeRange)
+ld_sub$IncomeRange <- factor(ld_sub$IncomeRange, 
+      levels = c('$0', '$1-24,999', '$25,000-49,999', '$50,000-74,999', 
+              '$75,000-99,999', '$100,000+', 'Not displayed', 'Not employed'), 
+      ordered=T)
+
+qplot(IncomeRange, data=ld_sub)
+#summary(ld_sub$IncomeRange)
+
+ld_sub$StatedMonthlyIncome..Annualized <- ld_sub$StatedMonthlyIncome * 12
+qplot(StatedMonthlyIncome..Annualized, 
+      data=subset(ld_sub, StatedMonthlyIncome..Annualized<1000000), 
+      binwidth = 1000)
+summary(ld_sub$StatedMonthlyIncome..Annualized)
+
+#qplot(log(StatedMonthlyIncome..Annualized), data=ld_sub)
+#qplot(x = StatedMonthlyIncome..Annualized, y = StatedMonthlyIncome..Annualized,
+#      data = ld_sub,
+#      geom = 'boxplot') +
+#  coord_cartesian(ylim = c(0, 200000))
+```
+
+The StatedMonthlyIncome field has been annualized to better match the 
+IncomeRange variable. The mean and median of stated income roughly match the 
+histogram of income ranges and visually looks similar if the 100,000+ category 
+were further divided. The histogram for stated income has a very long tail on 
+the right due to a number of applicants with incomes in the millions; the max 
+value of annualized income is over $21M.  These high-end incomes could be 
+investors getting a feel for the service.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanOriginalAmount}
+qplot(LoanOriginalAmount, data=ld_sub, binwidth = 1000)
+summary(ld_sub$LoanOriginalAmount)
+#qplot(log(LoanOriginalAmount), data=ld_sub, binwidth = .5)
+```
+
+Loan amounts range from $1,000 to $35,000 with the majority being below 
+$10,000.  The distribution of loan amounts is skewed to the right and has spikes 
+every $5,000.  It looks like borrowers tend to round to the nearest $5,000.
+
+Next, I will look at how much investors tend to invest per loan.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanAmt_per_Investor}
+#This chunk added while writing the Reflection at the end.
+with(ld_sub, summary(LoanOriginalAmount/Investors))
+#with(subset(ld_sub, LoanOriginalAmount/Investors<12000), 
+#     summary(LoanOriginalAmount/Investors))
+boxplot(ld_sub$LoanOriginalAmount/ld_sub$Investors, 
+        xlab="Investment per Loan ") 
+
+#with(ld_closed, summary(LoanOriginalAmount/Investors))
+```
+
+Each loan is funded by multiple investors.  By dividing the loan amount by the
+number of investors, the median amount invested on a loan is $161 and the mean 
+amount is $3,783.  The mean is skewed by some large investments that are 
+outliers.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, BorrowerRate}
+qplot(BorrowerRate, data=ld_sub, binwidth = .01)
+summary(ld_sub$BorrowerRate)
+#qplot(LenderYield, data=ld_sub, binwidth = .01) +
+#  scale_x_continuous(limits = c(.2, .37))
+
+qplot(EstimatedReturn, data=ld_sub, binwidth = .01)
+summary(ld_sub$EstimatedReturn)
+#qplot(EstimatedReturn, data=ld_sub, binwidth = .01) +
+#  scale_x_continuous(limits = c(0, .2))
+
+```
+
+Each listing gives the loan's interest rate (BorrowerRate) along with the 
+expected return based on estimated losses (EstimatedReturn).  Both of these 
+numbers are annual rates.
+
+Interest rates range from 0.04 to 0.36 with an average of 0.196.  The histogram 
+is a bit right skewed with a spike at 0.31.
+
+Estimated returns range from a loss of 0.1827 to a gain of 0.2837 with an 
+average gain of 0.096.  The histogram appears to have outliers on both sides 
+of the graph with the bulk of the loans having a positive return.
+
+As a potential investor, I'm also interested in actual returns.  The Prosper 
+dataset doesn't include this variable, so I'll need to create it.
+
+Looking through the available fields, I see three ways to calculate an actual
+return.  All three returned the same result with one anomaly. When a loan is 
+paid off successfully, the principal payments should equal the loan amount. 
+Sometimes this is not the case.  I avoided this anomaly by not using the 
+principal payments filed and calculated the Actual Return as follows:
+
+Starting with the Customer Payments, subtract the Original Loan Amount and the
+Fees Paid by Investor.  Divide the result by the Original Loan Amount.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, CalcActualReturn}
+# This section calculates an Actual Return for each loan.
+
+# There are inconsistencies on some loans. For instance, principal payment 
+# amounts significantly higher than the loan amount, or total payments much 
+# higher than the monthly payment times number of months of the loan when 
+# no late or collection fees are assessed.  
+# The current calculation is an overall return that isn't annualized.  
+
+# Three ways to calculate using the available data.
+
+# Version 2 sometimes returns a different result.
+# When a loan is paid off, the principal payments should equal the loan amount.  
+# Sometimes this is not the case.
+# Versions 1 & 3 reflect the whole principal amount was repaid.
+
+#ld_sub$ActualReturn.v1 <- (ld_sub$LP_CustomerPrincipalPayments - 
+#                        ld_sub$LoanOriginalAmount +
+#                        ld_sub$LP_ServiceFees +
+#                        ld_sub$LP_InterestandFees) / ld_sub$LoanOriginalAmount
+ 
+#ld_sub$ActualReturn.v2 <- (ld_sub$LP_InterestandFees - 
+#                          ld_sub$LP_GrossPrincipalLoss + 
+#                          ld_sub$LP_ServiceFees) / ld_sub$LoanOriginalAmount
+
+ld_sub$ActualReturn <- (ld_sub$LP_CustomerPayments -
+                          ld_sub$LoanOriginalAmount +
+                          ld_sub$LP_ServiceFees) / ld_sub$LoanOriginalAmount
+
+#summary(ld_sub$ActualReturn)
+#head(subset(ld_sub, select=c("LoanStatus", "LoanOriginalAmount", 
+#                             "LP_CustomerPrincipalPayments", 
+#                             "LP_CustomerPayments", #"LP_InterestandFees", 
+#                             "LP_ServiceFees", "LP_GrossPrincipalLoss", 
+#                             "LP_NetPrincipalLoss", "ActualReturn"), 
+#            LoanStatus == "Completed"))
+```
+
+Since we don't know the ultimate fate of active loans, the dataset needs to be 
+limited to closed loans.  When loans are closed, their status will be Cancelled, 
+Completed, Chargedoff or Defaulted.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, closed_loans}
+#table(ld_sub$LoanStatus)
+closedStatuses <- c("Cancelled", "Completed", "Chargedoff", "Defaulted")
+ld_closed <- subset(ld_sub, LoanStatus %in% closedStatuses)
+
+qplot(LoanStatus, data=ld_closed)
+
+dim(ld_closed)
+count(ld_closed, LoanStatus)
+ld_closed %>%  #using dplyr
+  group_by(LoanStatus) %>%
+  summarise(proportion = n() / nrow(.))
+```
+
+There are 25,989 closed loans to analyze.
+19,650 were completed, 5,335 were charged-off, 1,004 defaulted, and none were 
+cancelled. About a quarter of the closed loans weren't completely paid off.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ActualReturn}
+qplot(ActualReturn, data=ld_closed, binwidth = .05)
+summary(ld_closed$ActualReturn)
+boxplot(ld_closed$ActualReturn, xlab="Actual Return")
+```
+
+The distribution of actual returns is bi-modal with a smaller grouping just 
+above -1, in the 50-100% loss range, and a larger grouping just above 0, in the 
+0-50% gain range.  On the boxplot, the inter-quartile-range (IQR) is in positive 
+territory, but the mean is in negative territory due to significant loses.
+
+Interestingly, the maximum actual return is 142%, while the maximum estimated
+return projected by prosper was only 28%. One thing to note is that my
+calculation of actual return is over the life of the loan, while Prosper's 
+estimated return is based on the annual interest rate.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, AnnualizeActualReturn}
+#head(subset(ld_closed, select=c("LoanOriginationDate", "ClosedDate", 
+#                                "Origin2Close","Origin2CloseYrs", 
+#                                "ActualReturn", "ActualReturn.Annualized"), 
+#            ActualReturn.Annualized < -2), 10)
+
+ld_closed$Origin2CloseYrs <- as.numeric(difftime(ld_closed$ClosedDate,
+                                                 ld_closed$LoanOriginationDate, 
+                                                 units = c("days")))/365
+
+ld_closed$ActualReturn.Annualized <- ld_closed$ActualReturn / 
+                                           ld_closed$Origin2CloseYrs
+
+#qplot(ActualReturn.Annualized, data=ld_closed, fill=LoanStatus)
+
+summary(ld_closed$ActualReturn.Annualized)
+```
+
+When I try to annualize the actual return, problems arise.  For instance, 
+if none of the loan was ever paid, the actual return is -100%.  If that loan
+was defaulted over a 6 month timeframe, the annualized number becomes -200%.
+Also, if someone paid on time through the first year and then defaulted, the 
+first year would have a positive return followed by a negative return the next 
+year.  There's probably a way to accurately annualize these loans, but I'm not
+sure how that works with the available data.  For now I'll settle with the 
+overall return without an annualized version that can be compared against the 
+estimates provided by Prosper.
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+
+The dataset is loaded into a data frame that contains 113,937 loans from 
+Prosper.  There are 81 variables related to each loan.
+
+The LoanOriginationDate field has loans from November, 15, 2005 through 
+March 3, 2014.
+
+The fields CreditGrade, EstimatedEffectiveYield, EstimatedLoss, EstimatedReturn, 
+ProsperRating..numeric, ProsperRating..Alpha, and ProsperScore weren't used 
+until July of 2009.  Since some of these fields will be used in the analysis, 
+loans prior to their use were removed from the dataset, leaving 84,837 records 
+to analyze.
+
+The Term of each loan can be 12, 36 or 60 months.
+
+The Status of each loan can be Cancelled, Chargeoff, Completed, Current, 
+Defualted, FinalPaymentInProgress, and PastDue.
+
+The ProsperRating assigned to each loan when it was first listed can be from 
+AA (best) to HR (high risk).  The possible values are AA, A, B, C, D, E, HR.
+
+Each loan has a ListingCategory that the borrower selects to indicate how they 
+plan to use the funds.  The value provided was numeric.  A new field was added 
+with the corresponding value of the field as provided by Prosper. For example,
+'1' is 'Debt Consolidation', and '2' is 'Home Improvement'.
+
+Other variables viewed include State, Occupation, EmploymentStatus, 
+EmploymentStatusDuration, IncomeRange, StatedMonthlyIncome, LoanOriginalAmount, 
+and LenderYield.
+
+### What is/are the main feature(s) of interest in your dataset?
+
+Actual payment detail is key to understand if a loan has a positive return for 
+the investor.  These variables start with 'LP_'.  The loan amount and term are 
+also needed.
+
+### What other features in the dataset do you think will help support your \
+investigation into your feature(s) of interest?
+
+I hope to better understand which of the following variables will help predict 
+positive returns on new loan listings.
+
+* ProsperRating, ListingCategory, State, Occupation, EmploymentStatus, 
+EmploymentStatusDuration, IncomeRange, StatedMonthlyIncome, and LenderYield.
+
+### Did you create any new variables from existing variables in the dataset?
+
+The Actual Return is calculated on each loan and is meaningful on loans that 
+have closed.  This field was calculated by taking the Customer Payments, 
+subtracting the Original Loan Amount and the Fees Paid by Investor, 
+and then dividing the result by the Original Loan Amount.
+
+### Of the features you investigated, were there any unusual distributions? \
+Did you perform any operations on the data to tidy, adjust, or change the form \
+of the data? If so, why did you do this?
+
+Chart distributions:
+
+* The number of loans originated by date had a curious dip at the end of 2012.
+* The distribution on actual returns is bi-modal, representing defaulted loans 
+on the negative side and completed loans on the positive side.  Both groupings 
+are skewed to the right.
+
+Data adjustments:
+
+* Dates were loaded as Factor variables and needed to be converted into a date 
+format.
+* The fields CreditGrade, EstimatedEffectiveYield, EstimatedLoss, 
+EstimatedReturn, ProsperRating..numeric, ProsperRating..Alpha, and ProsperScore 
+weren't used until July of 2009.  Loans missing these fields were removed for 
+consistency.
+* The ProsperRating factors had to be re-ordered so they displayed in the 
+correct order.
+* The ListingCategory variable is a numeric field.  A new field was added with 
+the corresponding value of the field as provided by Prosper.  This was done so 
+the chart would have meaningful labels.
+* The IncomeRange factors had to be re-ordered so they displayed in the correct 
+order.
+* When looking at actual returns, only closed loans were included since active
+loans don't have a final return yet.
+* A new variable called StatedMonthlyIncome..Annualized was created by 
+multiplying StatedMonthlyIncome by twelve so stated income could be compared to
+the IncomeRange field that is also stated as an annual number.
+
+# Bivariate Plots Section
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ActualReturn_by_LoanStatus}
+#qplot(ActualReturn, data=ld_closed, fill=LoanStatus, binwidth = .05)
+
+qplot(x = LoanStatus, y = ActualReturn,
+      data = ld_closed,
+      geom = 'boxplot') 
+```
+
+Looking at the box plots of actual returns on closed loans by loan status, 
+there is a clear separation of loans that completed successfully from those that
+didn't. On loans that defaulted or had a charge off, there are some outliers 
+that still had a positive return.  Depending on how much of the loan was paid 
+off and how many late fees were paid before defaulting, this is a possible 
+scenario. A handful of completed loans have a loss, which is unexpected.  It's 
+worth taking a closer look to see how that happened.
+
+```{r ignore = TRUE, include = FALSE, ActualReturn_by_LoanStatus2}
+# chuck blocked from being published when knitted
+
+subset(ld_closed, select=c("LoanStatus", "ActualReturn", "LoanOriginationDate", "ClosedDate",
+                           "LoanOriginalAmount", "LP_CustomerPayments",
+                           "LP_CustomerPrincipalPayments", "LP_InterestandFees", 
+                           "LP_ServiceFees", "LP_CollectionFees", 
+                           "LP_GrossPrincipalLoss", "LP_NetPrincipalLoss", 
+                           "LP_NonPrincipalRecoverypayments"),
+       LoanStatus == "Completed" & ActualReturn <= 0)
+```
+
+There are 16 loans with a completed status and zero return or less. Looking at 
+the fields that drive actual return, seven of the loans were paid off on the 
+same day they originated resulting in zero return.  One was paid off a week 
+after origination but didn't pay any interest for that week.  Eight of the loans 
+show payments much less than the original amount with no charge off.  The 
+numbers on these eight look like entry errors and will be removed from the 
+analysis since they will reduce the average return on completed loans.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ActualReturn_by_LoanStatus3}
+#dim(ld_closed)
+ld_closed <- subset(ld_closed, !(LoanStatus == "Completed" & ActualReturn < 0))
+dim(ld_closed)
+
+qplot(x = LoanStatus, y = ActualReturn,
+      data = ld_closed,
+      geom = 'boxplot') 
+```
+
+Removing the questionable loans leaves us with 25,981 closed loans to examine.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, EmplDuration_by_EmplStatus}
+# set order by actual return found later in analysis for consistancy
+ld_sub$EmploymentStatus <- factor(ld_sub$EmploymentStatus, 
+      levels = c('Part-time', 'Full-time', 'Retired', 'Employed', 
+                 'Self-employed', 'Not employed', 'Other', 'Not available'), 
+      ordered=T)
+
+#qplot(EmploymentStatusDuration, 
+#      data=subset(ld_sub, !is.na(EmploymentStatusDuration)), binwidth = 1) +
+#    facet_wrap(~EmploymentStatus, ncol = 4)
+
+qplot(x = EmploymentStatus, y = EmploymentStatusDuration,
+      data = subset(ld_sub, !is.na(EmploymentStatusDuration)),
+      geom = 'boxplot') 
+#  coord_cartesian(ylim = c(0, 150))
+
+qplot(EmploymentStatusDuration, 
+      data=subset(ld_sub, !is.na(EmploymentStatusDuration)), 
+      fill=EmploymentStatus, binwidth = 1)
+
+#by(ld_sub$EmploymentStatusDuration, ld_sub$EmploymentStatus, summary)
+```
+
+Breaking-out the employment durations by employment status helps show how 
+durations vary by status.  On the boxplot, the categories of Employed, Full-Time 
+and Self Employed look fairly similar with a median around 6 years.  Part-time 
+work tends to last a shorter duration.  The category of Not Employed has the 
+shortest duration.  All categories have outliers with long durations. On the 
+histogram, you can see that Employed peaks at zero and rapidly 
+decreases, suggesting that folks tend to move around a lot. Full Time status 
+actually peaks after zero with a steady decline over time.  The category of 
+Other has a spike at zero. It could be that a lot of folks are starting 
+something new and quickly need money, or it could just be applicants evading the 
+question.
+
+Looking at occupation when employment status is Other might reveal an 
+explanation.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Occupation_EmpStatus_Other}
+counts <- table(subset(ld_sub, EmploymentStatus == "Other")$Occupation)
+head(counts[order(-counts)], 6)
+```
+
+Almost all of the occupations when employment is Other are Other or blank, 
+further suggesting that these are applicants who are evading the question. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ActualReturn_by_EmplStatus}
+#qplot(ActualReturn, data=ld_closed, fill=EmploymentStatus, binwidth = .01)
+# order by actual returns found later in anaysis for closed loans
+ld_closed$EmploymentStatus <- factor(ld_closed$EmploymentStatus, 
+      levels = c('Part-time', 'Full-time', 'Retired', 'Employed', 
+                 'Self-employed', 'Not employed', 'Other', 'Not available'), 
+      ordered=T)
+
+qplot(x = EmploymentStatus, y = ActualReturn,
+      data = ld_closed,
+      geom = 'boxplot') +
+  stat_summary(fun.y = mean, geom = 'point', shape= 4)
+#  coord_cartesian(ylim = c(-.25, .25))
+
+#qplot(x = ActualReturn, data = ld_closed) +
+#  facet_wrap(~EmploymentStatus, ncol=4)
+qplot(x = ActualReturn,
+      data = subset(ld_closed, EmploymentStatus == "Full-time"), 
+      main="Employment Status - Full-time")
+qplot(x = ActualReturn,
+      data = subset(ld_closed, EmploymentStatus == "Other"), 
+      main="Employment Status - Other")
+
+#qplot(LoanOriginalAmount, data=ld_sub, binwidth = 1000) +
+#    facet_wrap(~IncomeRange, ncol = 4)
+
+#by(ld_closed$ActualReturn, ld_closed$EmploymentStatus, summary)
+```
+
+Comparing actual returns by employment status shows that the median return is 
+positive for all categories.  The employment categories of Full-time, Part-time 
+and Retired have positive means (the 'x' on the graph) and their IQRs are in 
+positive territory.  The employment categories of Not Employed, Other and 
+Self-employed IQRs are wide and fall deep into negative territory 
+suggesting investors are more likely to lose money on these loans.  
+Comparing the histograms of actual returns for Full-time and Other shows that
+Other has more losses relative to gains which pulls the mean away from 
+the median.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ActualReturn_by_EmplStatDuratn}
+#qplot(x = EmploymentStatusDuration, y = ActualReturn,
+#      data = ld_closed, alpha = 1/5)  
+
+ggplot(aes(x=EmploymentStatusDuration, y=ActualReturn), data=ld_closed) +
+  geom_point(alpha=1/3, position=position_jitter(h=0), color='orange') +
+  xlim(0, 500) +
+  geom_line(stat='summary', fun.y=median, color='red') +
+  geom_line(stat='summary', fun.y=mean) +
+  geom_smooth(method = 'lm') +
+  geom_hline(yintercept = 0)
+
+with(ld_closed, cor.test(EmploymentStatusDuration, ActualReturn))
+#with(subset(ld_closed, ActualReturn >0), 
+#     cor.test(EmploymentStatusDuration, ActualReturn))
+#with(subset(ld_closed, EmploymentStatusDuration <100), 
+#     cor.test(EmploymentStatusDuration, ActualReturn))
+#with(subset(ld_closed, EmploymentStatusDuration < 200 & ActualReturn < 0), 
+#     cor.test(EmploymentStatusDuration, ActualReturn))
+```
+
+Looking at the scatter plot of actual returns by employment duration, there is a
+pattern of decreasing gains and losses as employment duration increases.  That 
+is, the higher gains drop off leaving relatively more lower gains and the lesser 
+losses drop off leaving the greater losses. The drop in gains makes me think the 
+interest rates are lower due to better credit scores.  The decrease in data 
+points reflects the decrease in number of borrowers as employment duration 
+increases that we saw earlier.
+
+The red line shows the median actual return for the employment duration, and it
+shows a gain until the data points become too few for a steady line.  The
+black line is the mean actual return.  The blue line is a smoothed version of 
+the mean, and that line varies little just inside the loss side of returns.
+
+Ultimately, there is no correlation between actual return and the duration of 
+employment.
+
+```{r fig.height=8, echo=FALSE, message=FALSE, warning=FALSE, ActualReturn_by_Occupation}
+
+qplot(x = Occupation, y = ActualReturn,
+      data = ld_closed, 
+      geom = 'boxplot') +
+    coord_flip() 
+
+#boxplot(ActualReturn ~ Occupation, data=ld_closed, horizontal=TRUE, 
+#        par(las=2, mar=c(4,10,4,2), cex.axis=0.6), 
+#        main="Actual Return by Occupation", horiz=TRUE, 
+#        xlab="Return", lex.order = TRUE)
+
+#summary(ld_closed$ActualReturn)
+#summary(subset(ld_closed, Occupation == "Other")$ActualReturn)
+
+# Output of next statement is useful but too extensive for published version
+#by(ld_closed$ActualReturn, ld_closed$Occupation, summary)
+```
+
+The median of actual returns for almost all Occupations is positive while the 
+means are mixed between gains and losses.  The IQRs are all over the 
+place.  There are a number of occupations where the IQR is completely in 
+positive territory.  College Sophomores look like delinquents, though we can't 
+see how many loans are represented. It's tempting to think that some borrower's 
+occupations on a loan might be a safer investments than others. Interestingly, 
+the category of Other isn't out of line compared to the other categories and 
+actually has a higher range of returns.  If borrowers were using Other to evade 
+the question, I would expect it to show a lower return. There's probably a
+better explanation for why this category is selected so often along with
+employment status of Other.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanAmt_by_Income}
+#qplot(LoanOriginalAmount, data=ld_sub, fill=IncomeRange, binwidth = 1000)
+#qplot(LoanOriginalAmount, data=ld_sub, binwidth = 1000) +
+#    facet_wrap(~IncomeRange, ncol = 4)
+
+qplot(x = IncomeRange, y = LoanOriginalAmount,
+      data = ld_sub,
+      geom = 'boxplot') 
+#  coord_cartesian(ylim = c(0, 10000))
+```
+
+For borrowers that have an income, loan amounts increase as the incomes 
+increase.  Borrowers reporting no income or not employed are requesting loans 
+around the size of the lowest two income ranges.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ActualReturn_by_Income}
+
+qplot(x = IncomeRange, y = ActualReturn,
+      data = ld_closed,
+      geom = 'boxplot') +
+  stat_summary(fun.y = mean, geom = 'point', shape= 4)
+
+#by(ld_closed$ActualReturn, ld_closed$IncomeRange, summary)
+```
+
+The median actual return in all income categories is positive, ranging from 
+0.069 for unemployed to 0.108  for $0 income.  The mean returns, indicated by 
+an 'x', start at a loss of 0.096 and move closer to the median as incomes 
+increase.  The IQR also narrows as incomes increase, most likely due to fewer 
+defaults.  It looks like borrowers with an income of at least $50,000 are most 
+likely to have a positive return.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Cor_ActualReturn_Income}
+#ggplot(aes(x=StatedMonthlyIncome..Annualized, y=ActualReturn), data=ld_closed) +
+#  geom_point(alpha=1/8) +
+#  scale_x_continuous(limits = c(0, 300000), 
+#  labels=function(n){format(n, scientific = FALSE)}) 
+
+ggplot(aes(x=StatedMonthlyIncome..Annualized, y=ActualReturn), data=ld_closed) +
+  geom_point(alpha=1/8) +
+  scale_x_continuous(limits = c(0, 300000), 
+                     labels=function(n){format(n, scientific = FALSE)}) +
+  geom_smooth(method = 'lm')
+  
+with(ld_closed, cor.test(StatedMonthlyIncome..Annualized, ActualReturn))
+#with(subset(ld_closed, StatedMonthlyIncome..Annualized < 300000), 
+#     cor.test(StatedMonthlyIncome..Annualized, ActualReturn))
+#with(subset(ld_closed, ActualReturn <= 0), 
+#     cor.test(StatedMonthlyIncome..Annualized, ActualReturn))
+#with(subset(ld_closed, ActualReturn > 0 & 
+#              StatedMonthlyIncome..Annualized < 200000), 
+#     cor.test(StatedMonthlyIncome..Annualized, ActualReturn))
+#with(subset(ld_closed, StatedMonthlyIncome..Annualized > 10000 & 
+#              StatedMonthlyIncome..Annualized < 100000), 
+#     cor.test(StatedMonthlyIncome..Annualized, ActualReturn))
+```
+
+The scatter plot of actual returns by stated income shows two distinct groupings
+of loans with a gain and loans with a loss.  The groupings look similar to the 
+patterns in the actual returns by employment duration graph done earlier in the
+analysis. The correlation coefficient does not show a meaningful 
+relationship. The blue line is the smoothed mean of actual returns, and it moves
+from a loss to a gain around $60,000 in income.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Cor_ActualReturn_LoanAmt}
+ggplot(aes(x=LoanOriginalAmount, y=ActualReturn), data=ld_closed) +
+  geom_jitter(alpha=1/8) 
+
+with(ld_closed, cor.test(LoanOriginalAmount, ActualReturn))
+#with(subset(ld_closed, LoanOriginalAmount < 20000), 
+#     cor.test(LoanOriginalAmount, ActualReturn))
+```
+
+There is not a meaningful correlation between the amount borrowed and the
+investor's actual return on the loan.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, ActualReturn_ProsperRating} 
+qplot(x = ProsperRating..Alpha., y = ActualReturn,
+      data = ld_closed,
+      geom = 'boxplot') +
+  stat_summary(fun.y = mean, geom = 'point', shape= 4)
+  
+#summary(ld_closed$ActualReturn)
+#by(ld_closed$ActualReturn, ld_closed$ProsperRating..Alpha., summary)
+```
+
+When looking at actual returns by the Prosper ratings, the median return doesn't
+shift by a whole lot, but the IQRs significantly expand as risk goes up. The 
+median returns increase as the loans become more risky  for the first five 
+categories while the mean returns decrease as risk increases.  The final two 
+categories with the most risk actually see a drop in median and mean returns.
+
+A Prosper rating of D provides the highest median return, but
+the mean return is negative.  Only ratings of AA and A have a positive median
+and mean return. It's interesting to note that, as risk increases, 
+the difference between the median and mean increases.  The mean is lower than 
+the median because of outliers caused by loan defaults. The difference 
+becomes greater because of more defaults that pull the mean down.  This makes 
+me think that the Prosper rating is effective.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Cor_Income_LoanAmt}
+ggplot(aes(x=StatedMonthlyIncome..Annualized, y=LoanOriginalAmount), 
+       data=ld_sub) +
+  geom_point(alpha=1/8) +
+  scale_x_continuous(limits = c(0, 300000), 
+                     labels=function(n){format(n, scientific = FALSE)})
+
+with(ld_sub, cor.test(StatedMonthlyIncome..Annualized, LoanOriginalAmount))
+with(subset(ld_sub, StatedMonthlyIncome..Annualized < 200000), 
+     cor.test(StatedMonthlyIncome..Annualized, LoanOriginalAmount))
+```
+
+The scatter plot between income and loan amount appears to have a positive 
+correlation, thought the correlation seems to break down with incomes over 
+$100,000.  Calculating the correlation coefficient for all incomes and then for 
+incomes under $300,000 improves the coefficient from 0.183 to 0.418.
+
+```{r fig.width=9, fig.height=8.5, echo=FALSE, message=FALSE, warning=FALSE, ScatterplotMatrix}
+# Scatterplot Matrix
+
+#ld_sub_matrix <- ld_sub[, c(5, 6, 10, 15, 17, 20, 21, 48, 64, 65, 83, 84)]
+ld_closed_matrix <- 
+  ld_closed[, c(5, 6, 9, 13, 15, 17, 20, 21, 48, 64, 65, 83, 84)]
+#head(ld_closed_matrix)
+#names(ld_sub_matrix)
+#theme_set(theme_minimal(9))
+set.seed(1836)
+
+#ggpairs(ld_sub_matrix[sample.int(nrow(ld_sub_matrix), 1000), ]) 
+ggpairs(ld_closed_matrix[sample.int(nrow(ld_closed_matrix), 1000), ]) +
+  theme_grey(base_size = 8)
+
+# https://www.r-bloggers.com/plot-matrix-with-the-r-package-ggally/
+#ggpairs(ld_sub, columns=17:21, title="Scatterplot Matrix")
+
+## Need to spend more time getting corrplot to work
+#install.packages('corrplot')
+#library(corrplot)
+#M <- cor(ld_closed_matrix)
+#corrplot(M, method="circle")
+
+```
+
+Looking at the scatterplot matrix, I see a couple more relationships to explore.
+
+For instance, the correlation between term and loan amount suggests that 
+borrowers want to spread larger loans over longer timeframes.  
+
+Also, the scatter plot for interest rate vs actual return shows how actual 
+returns vary more and more as interest rates increase.  Since higher interest 
+rates are given to loans with higher risk, this pattern makes sense.  Comparing 
+the estimated return, which adjusts the interest rate for risk, to actual return 
+changes that pattern to show the estimated return more closely grouped with 
+actual return.  This change in pattern shows that the estimated return is more 
+realistic than looking at the interest rate when estimating returns.
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+
+The box plots of actual returns by loan status shows a clear separation of loans 
+that were paid off from those that defaulted. 
+
+Comparing actual returns by employment status shows that the median return is 
+positive for all categories, while mean and IQR are mixed between positive and 
+negative returns.
+
+The median of actual returns for almost all Occupations is positive while the 
+means are mixed between gains and losses.   It's tempting to think that some 
+borrower's occupations on a loan application might be a safer investment than 
+others.
+ 
+The scatter plot of actual returns by stated income shows two distinct groupings 
+of loans by gains and losses.  A meaningful correlation was not found.
+
+When looking at actual returns by the Prosper ratings, the median return doesn't 
+shift by a whole lot, but the inter-quartile-ranges significantly expand as risk 
+goes up.
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+
+Breaking-out the employment durations by employment status helped show how 
+durations vary by status.   The categories of Employed, Full-Time and Self 
+Employed look fairly similar with a median around 6 years. Part-time work tends 
+to last a shorter duration. The category Not Employed is the shortest duration. 
+
+The scatter plot between income and loan amounts appears to have a positive 
+correlation, thought the correlation seems to break down with incomes over 
+$100,000. 
+
+### What was the strongest relationship you found?
+
+The Prosper rating has a strong relationship to actual returns.  Also, loan 
+amounts tend to increase as borrower income increases. 
+
+
+# Multivariate Plots Section
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, EmplDuration_Return_Rating}
+ggplot(aes(x=EmploymentStatusDuration, y=ActualReturn), data=ld_closed) +
+  geom_point(alpha=1/2, size=1, position='jitter', 
+             aes(color = ProsperRating..Alpha.)) +
+  scale_color_brewer(type = 'div', palette = 2, 
+                     guide = guide_legend(title = 'ProsperRating', 
+                                  override.aes = list(alpha = 1, size = 2))) +
+  theme_dark() +
+  xlim(0, 500) +
+  ggtitle('Actual Return by EmploymentStatusDuration and ProsperRating') 
+```
+
+This graph distinguish the Prosper rating on the actual return by 
+employment duration scatterplot.  The two
+best Prosper ratings dominate the lower gains along all employment 
+durations.  There are very few instances of these ratings having returns greater
+than 0.25, though there are a fair amount scattered in the loss side of 
+returns. The riskier ratings are more prevalent in the higher gains and lower 
+losses.
+
+Though the number of loans decreases as employment duration increases, all 
+rating categories are represented from 0 months on.  The higher risk ratings do 
+seem to drop off faster than the lower risk rating, indicating that employment 
+duration is probably taken into account in the rating.  An earlier chart showed 
+that the smoothed mean of actual returns remained slightly negative across all 
+employment durations.  The reduction in loans with losses is balanced by the 
+reduction in loans with higher gains.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, EmplDuration_Return_EmplStatus}
+ggplot(aes(x=EmploymentStatusDuration, y=ActualReturn), data=ld_closed) +
+  geom_point(alpha=1/3, position=position_jitter(h=0)) +
+  xlim(0, 500) +
+  geom_smooth(method = 'lm', aes(color = EmploymentStatus)) +
+  geom_hline(yintercept = 0)
+```
+
+This chart separates the smoothed mean of actual-return by employment 
+status.  Employment statuses of Full-time, Part-time and Retired show gains, 
+while the other four categories show losses.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, LoanAmt_Return_Rating}
+ggplot(aes(x=LoanOriginalAmount, y=ActualReturn), data=ld_closed) + 
+  geom_point(alpha=1/2, size=1, position='jitter', aes(color = IncomeRange)) +
+  scale_color_brewer(type = 'seq',
+    guide = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  theme_dark()
+```
+
+In this chart, you can see how loan amounts tend to increase as incomes 
+increase.  There doesn't seem to be a pattern within actual returns.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Duration_Income_Rating}
+ggplot(aes(x = EmploymentStatusDuration, y = StatedMonthlyIncome),
+       data = ld_closed) + 
+  geom_line(aes(color = ProsperRating..Alpha.), 
+            stat = 'summary', fun.y = median) +
+  ylim(0, 20000) + xlim(0, 400)
+```
+
+For employees that were recently employed, you can see how income drives the 
+ratings.  This could be because these folks have limited credit history, so the
+rating is strongly based on income.  As you go over 100 months of employments,
+the range of income becomes greater and the ratings become more varied as credit
+history becomes more robust.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Date_Return_Status}
+ggplot(aes(LoanOriginationDate, ActualReturn),
+       data = ld_closed) +
+  geom_line(aes(color = LoanStatus), 
+            stat = 'summary', fun.y = mean) +
+  ggtitle('Actual Return by Loan Origination Date for Closed Loan Statuses') 
+```
+
+The green line shows the mean actual return on loans with a Completed 
+status.  Since most are three year loans, the line starts declining at 
+three years ago.  The decline is a result of three year loans that completed 
+early and had less interest paid on the loan than if they went full 
+term.  The blue and red lines are the Defaulted and Chargedoff statuses.  The
+more payments that were made on these loans, the lower the loss.  The more
+recent loans would have little paid on them and therefore a large loss, 
+resulting in the narrowing range to larger losses.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Return_Income_EmpStatus}
+#ggplot(aes(StatedMonthlyIncome..Annualized, ActualReturn), data = ld_closed) +
+#  geom_line(aes(color = EmploymentStatus), stat = 'summary', fun.y = mean) +
+#  facet_wrap(~EmploymentStatus, ncol = 4) +
+#  scale_x_continuous(limits = c(0, 300000), 
+#                     labels=function(n){format(n, scientific = FALSE)})
+#  scale_color_brewer(type = 'div', 
+#                     guide = guide_legend(title = 'EmploymentStatus', 
+#                                  override.aes = list(alpha = 1, size = 2))) +
+#  theme_dark() +
+#  ggtitle('Actual Return by Stated Income for Employment Statuses') 
+
+ggplot(aes(x=StatedMonthlyIncome..Annualized, y=ActualReturn), data=ld_closed) +
+  geom_point(alpha=1/2, size=1, position='jitter', 
+             aes(color = EmploymentStatus)) +
+  scale_color_brewer(type = 'div', 
+                     guide = guide_legend(title = 'EmploymentStatus', 
+                                    override.aes = list(alpha = 1, size = 2))) +
+  scale_x_continuous(limits = c(0, 300000), 
+                     labels=function(n){format(n, scientific = FALSE)}) +
+  theme_dark() +
+  ggtitle('Actual Return by Stated Income for Employment Statuses') 
+# type div, seq, qual    GnBu  palette = 2, 
+
+ggplot(aes(x=StatedMonthlyIncome..Annualized, y=ActualReturn), data=ld_closed) +
+  geom_point(alpha=1/3, position=position_jitter(h=0)) +
+  scale_color_brewer(type = 'qual', palette = 3, 
+                     guide = guide_legend(title = 'EmploymentStatus', 
+    override.aes = list(alpha = 1, size = 2))) +
+  scale_x_continuous(limits = c(0, 300000), 
+                     labels=function(n){format(n, scientific = FALSE)}) +
+  geom_smooth(method = 'lm', aes(color = EmploymentStatus)) +
+  geom_hline(yintercept = 0)
+```
+
+Employment status is ordered by highest gains to highest losses as seen in an 
+earlier boxplot.  In the first chart, the blue points
+for Not Employed are lined-up at zero income.  The darker brown for Part-time
+fall in the lower income levels an appear more in the gains than losses. The 
+lighter brown for Full-time are scattered through all incomes and seem to be 
+more prevalent in the higher actual returns, while the white points for Employed 
+are more in the lower returns. The dark green for Other seems to be mostly in 
+the lower incomes and loss side of returns. On this chart, you can see how the 
+bulk of loans are for the Employed and Full-time employment statuses.  
+
+The second chart shows the smoothed mean of actual returns by employment 
+status.  The line for Not Employed is meaningless since income is always 
+zero.  For the most part, mean returns increase as income increases, thought 
+self-employed is flat and part-time actually decreases.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Return_Income_ProsperRating}
+#ggplot(aes(StatedMonthlyIncome..Annualized, ActualReturn), data = ld_closed) +
+#  geom_line(aes(color = EmploymentStatus), stat = 'summary', fun.y = mean) +
+#  facet_wrap(~EmploymentStatus, ncol = 4) +
+#  scale_x_continuous(limits = c(0, 300000), 
+#                    labels=function(n){format(n, scientific = FALSE)})
+#  scale_color_brewer(type = 'div', 
+#                     guide = guide_legend(title = 'EmploymentStatus', 
+#        override.aes = list(alpha = 1, size = 2))) +
+#  theme_dark() +
+#  ggtitle('Actual Return by Stated Income for Employment Statuses') 
+
+ggplot(aes(x=StatedMonthlyIncome..Annualized, y=ActualReturn), 
+       data=ld_closed) +
+  geom_point(alpha=1/2, size=1, position='jitter', 
+             aes(color = ProsperRating..Alpha.)) +
+  scale_color_brewer(type = 'seq', palette = 3, 
+                     guide = guide_legend(title = 'ProsperRating', 
+        override.aes = list(alpha = 1, size = 2))) +
+  scale_x_continuous(limits = c(0, 300000), 
+                     labels=function(n){format(n, scientific = FALSE)}) +
+  theme_dark() +
+  ggtitle('Actual Return by Stated Income for Prosper Ratings') 
+# type div, seq, qual    GnBu  palette = 2, 
+
+ggplot(aes(x=StatedMonthlyIncome..Annualized, y=ActualReturn), 
+       data=ld_closed) +
+  geom_point(alpha=1/2, size=1, position='jitter', 
+             aes(color = ProsperRating..Alpha.)) +
+  scale_color_brewer(type = 'div', palette = 1, 
+                     guide = guide_legend(title = 'ProsperRating', 
+        override.aes = list(alpha = 1, size = 2))) +
+  scale_x_continuous(limits = c(0, 300000), 
+                     labels=function(n){format(n, scientific = FALSE)}) +
+  geom_smooth(method = 'lm', aes(color = ProsperRating..Alpha.)) +
+  theme_dark() +
+  geom_hline(yintercept = 0)  +
+  ggtitle('Actual Return by Stated Income for Prosper Ratings') 
+
+```
+
+The first chart shows a pattern of when actual returns are a gain.  The higher
+ratings are mostly under a 0.25 actual return and extend out through the higher 
+incomes.  As the actual return increases, you can see how the ratings drop
+since loans with higher risk require a higher interest rate.  On the loss side 
+of the chart, defaults in the lower incomes have the lower rating, but higher 
+ratings become more prevalent as incomes increase.  In general, defaults become 
+more sparse as incomes rise. As a whole, as incomes increase over $100,000, the
+number of loans seems to drop off for the lower Prosper ratings.  Higher rated 
+loans appear to drop off after $150,000.
+
+There is a nice grouping of high risk loans with returns over 0.5 when incomes 
+are under $100,000.  Though this seems like a great opportunity for really good 
+returns, the previous chart for return vs income and returns vs ratings
+shows that the losses pull average returns into a loss.  The median return is
+a gain, but over time you will lose money on high risk loans.
+
+The second chart adds smoothed means by Prosper rating to the previous 
+scatterplot using a different color scheme.  The best two ratings start with 
+positive returns and increase slowly as incomes increase.  The remaining five 
+ratings start with a loss and are all showing gains before income reaches 
+$100,000.  It looks like favorable returns are likely on risky loans when the
+borrower's income is over $80,000.  From earlier charts, high risk loans with 
+high incomes occur less frequently.
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest?
+
+For actual returns, the two best Prosper ratings dominate the lower gains along 
+all employment durations.  The riskier ratings are more prevalent in the higher
+gains and are spread out across losses.  As duration increases, the higher risk 
+ratings seem to drop off faster than the lower risk rating.
+
+Displaying the smoothed means of actual returns by employment status over
+employment durations shows that employment statuses of Full-time, Part-time and
+Retired are most likely to return gains.
+
+As borrower income increases, actual returns by employment status tend to 
+increase.  Full-time and Retired employment start with gains and increase as
+duration increases.  Employed and Other start with loses and increase to gains
+around $120,000 income.  Self-employed stays on the loss side with little 
+change.  Part-time workers start with a nice gain and show decreasing gains as 
+income increases.
+
+When looking at the smoothed means of actual returns by income and Prosper 
+rating, returns increase as income increases for all ratings.  Though the top 
+two rating show gains across all incomes, all ratings show a gain on returns as 
+incomes increase over $80,000.
+
+### Were there any interesting or surprising interactions between features?
+
+It's interesting to see that the Prosper rating is a good indication of risk on 
+a loan.  You can also see how greater risk can result in higher returns, but 
+that same risk can also result in greater losses that ultimately hurt overall 
+returns.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_One}
+qplot(x = IncomeRange, y = ActualReturn, data = ld_closed,
+      geom = 'boxplot', main="Actual Returns by Income Range") +
+  stat_summary(fun.y = mean, geom = 'point', shape= 4) +
+  labs(x = "Annual Income Range of Borrower ($)", y = "Actual Return on Loan")
+```
+
+### Description One
+This boxplot shows the median, mean and IQR of actual returns by income range, 
+reflecting how the borrower's income affects the potential return on 
+loans. Income above $50,000 is where the median and mean are a gain.
+
+### Plot Two
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Two}
+qplot(x = ProsperRating..Alpha., y = ActualReturn, data = ld_closed,
+      geom = 'boxplot', main="Actual Returns by Prosper Rating") +
+  stat_summary(fun.y = mean, geom = 'point', shape= 4) +
+  labs(x = "Prosper Rating", y = "Actual Return on Loan")
+```
+
+### Description Two
+This boxplot shows the median, mean and IQR of actual returns by Prosper rating, 
+reflecting how the rating is a good predictor of the potential return on 
+loans.  Only ratings of AA and A have a median and mean gain.
+
+### Plot Three
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Three}
+ggplot(aes(x=StatedMonthlyIncome..Annualized, y=ActualReturn), data=ld_closed) +
+  geom_point(alpha=1/2, size=1, position='jitter', 
+             aes(color = ProsperRating..Alpha.)) +
+  scale_color_brewer(type = 'div', palette = 1, 
+                     guide = guide_legend(title = 'ProsperRating', 
+        override.aes = list(alpha = 1, size = 2))) +
+  scale_x_continuous(limits = c(0, 300000), 
+                     labels=function(n){format(n, scientific = FALSE)}) +
+  geom_smooth(method = 'lm', aes(color = ProsperRating..Alpha.)) +
+  theme_dark() +
+  geom_hline(yintercept = 0)  +
+  ggtitle('Actual Return by Stated Income for Prosper Ratings') +
+  labs(x = "Borrower's Annual Income ($)", y = "Actual Return on Loan")
+```
+
+### Description Three
+This scatterplot with smoothed means of actual returns brings the previous two
+plots together for a nice picture of what income and Prosper rating combinations
+will likely, on average, have a positive actual return.  The smoothed mean for 
+AA and A rated loans show a gain for all incomes. The smoothed mean for the 
+remaining ratings moves from a loss to a gain in the $60,000 to $100,000 range. 
+
+------
+
+# Reflection
+
+When I started exploring this dataset, I went to Prosper's website to understand 
+what Prosper does.  The prospectus on the website helped to put the dataset into 
+context and to better understand the variables.  
+
+As I started exploring the variables, I quickly realized that the actual return 
+was not provided on loans that were closed.  Deciding how to best calculate the 
+actual return took some time, and I found it easiest to write some records of 
+closed loans to an Excel file so I could more easily try different formulas.  I 
+do a lot of work in Excel for my current job, and 'seeing' the data through 
+command lines has been a big shift for me.  By the end of this project, I found 
+myself quickly writing commands to see the data in R.  Being immersed in RStudio 
+to complete this project has helped me develop a feel for the environment.
+
+I was surprised to find inconsistencies in the dataset.  For instance, a 
+Completed loan should have principal paid equal to the original loan amount, but 
+there were some cases where these numbers weren't even close.  Sometimes the 
+Customer Payments field seemed to include the full amount, but sometimes the 
+missing money wasn't accounted for in any of the other fields.  Overall, I 
+believe the dataset is accurate, but finding such inconsistencies makes me 
+wonder what other issues I didn't find that skew results.  
+
+The boxplot of actual returns by income range seems to show a clear pattern of 
+improved returns as incomes increased, yet calculating the correlation to 
+stated-income didn't show a meaningful correlation.  Reshaping the data in some 
+way would probably reveal the answer, and further separating loans by Prosper 
+rating might reveal a correlation that could then be used for a linear 
+model.  There are still many combinations of variables to explore.  
+
+It would be interesting to model a random portfolio of loans to see how the 
+investment would turn out.  The dataset doesn't provide the actual payment and 
+fees dates, but there should be enough information to determine an overall 
+return.  Based on what I found, I would invest $1,000 by spreading $100 across 
+10 loans that meet the following criteria: Any AA or A rated loan, or B rated 
+loans with borrower's income at least $60,000, or any subsequent Prosper rating 
+adding $10,000 to income for each step.  It would be good to include a cap on 
+loan size based on income as well.
+
+One final thought on the results.  According to an article I found at
+HuffingtonPost.com, the National Bureau of Economic Research states that the 
+Great Recession officially began in December 2007 and ended in June 2009.  The 
+dataset in this analysis starts in August 2009 and ends in March 2014, which 
+has been a time of recovery.   How would these results change in times of 
+expansion or another downturn?  Prosper is new and doesn't have history in 
+those environments.  If investing a significant amount of money, it would be 
+worth seeing how other lending platforms perform in different economic
+conditions.
